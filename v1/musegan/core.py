@@ -264,6 +264,11 @@ class MuseGAN(object):
         self.dir_ckpt = os.path.join(self.config.exp_name, 'checkpoint')
         self.dir_sample = os.path.join(self.config.exp_name, 'samples')
         self.dir_log = os.path.join(self.config.exp_name, 'logs')
+        self.dir_output = os.path.join(self.config.exp_name, 'output')
+
+        for directory in [self.dir_ckpt, self.dir_sample, self.dir_log, self.dir_output]:
+            if not os.path.exists(directory):
+                os.makedirs(directory)
 
         if not os.path.exists(self.dir_ckpt):
             os.makedirs(self.dir_ckpt)
@@ -458,3 +463,32 @@ class MuseGAN(object):
             np.save(os.path.join(gen_dir, 'gen.npy'), result)
 
         return result, eval_result
+    def generate_custom(self, input_data, config):
+        """Generate music with custom parameters."""
+        import os
+        from musegan.libs.utils import save_midi, ensure_dir
+
+        print("[*] Generating with config:", config)
+
+        # Load model if not already
+        if not hasattr(self, 'saver'):
+            self.load(self.dir_ckpt)
+
+        # Create output directory
+        output_dir = os.path.join(self.dir_output, 'custom_generate')
+        ensure_dir(output_dir)
+
+        # Create latent vectors
+        z = self.model.sample_z(1)
+        z_inter_v = np.random.normal(0, 1, size=(1, self.model.z_inter_dim))
+        generated = self.sess.run(self.model.fake_x, feed_dict={
+            self.model.z_inter_v: z_inter_v,
+            self.model.is_train: False
+        })
+
+        # Use input_data utility to convert to MIDI
+        mid_name = f"gen_{config['genre']}_{config['tempo']}bpm_{config['length_bars']}bars.mid"
+        save_path = os.path.join(output_dir, mid_name)
+        save_midi(generated[0], save_path, tempo=float(config['tempo']))
+
+        print(f"[✓] Saved generated MIDI to {save_path}")

@@ -28,16 +28,20 @@ class TemporalHybrid:
         self.num_bar = config.num_bar
         self.num_step = config.num_step
         self.pitch_range = config.pitch_range
-
+        self.batch_size = config.batch_size
+        self.z_inter_dim = 32  # or whatever is appropriate
+        self.batch_size = 1
         # Define inputs
         self.z_intra_v = tf.compat.v1.placeholder(tf.float32, shape=(None, self.z_intra_dim, self.track_dim), name='z_intra_v')
         self.z_intra_i = tf.compat.v1.placeholder(tf.float32, shape=(None, self.z_intra_dim, self.track_dim), name='z_intra_i')
         self.z_inter_v = tf.compat.v1.placeholder(tf.float32, shape=(None, self.z_inter_dim), name='z_inter_v')
         self.z_inter_i = tf.compat.v1.placeholder(tf.float32, shape=(None, self.z_inter_dim), name='z_inter_i')
         self.x = tf.compat.v1.placeholder(tf.float32, shape=(None, self.num_phrase, self.num_bar, self.num_step, self.pitch_range, self.track_dim), name='x')
+        self.is_train = tf.compat.v1.placeholder(tf.bool, name='is_train')
 
         # Build generator and discriminator
         self.generated = self._build_generator(self.z_inter_v)
+        self.fake_x = self.generated  # 👈 Add this line here
         self.prediction = self.generated
         self.prediction_binary = tf.cast(tf.greater(self.generated, 0.5), tf.float32)
         chroma_bins = 12
@@ -69,6 +73,10 @@ class TemporalHybrid:
         # Optimizers
         self.d_optim = tf.compat.v1.train.AdamOptimizer(learning_rate=0.0002, beta1=0.5).minimize(self.d_loss, var_list=self.d_vars)
         self.g_optim = tf.compat.v1.train.AdamOptimizer(learning_rate=0.0002, beta1=0.5).minimize(self.g_loss, var_list=self.g_vars)
+        self.z = tf.placeholder(tf.float32, [None, 128], name='z')
+        self.z_dim = 128
+    def sample_z(self, batch_size):
+        return np.random.normal(0, 1, size=(batch_size, self.z_dim))
 
     def _build_generator(self, z_inter_v):
         with tf.compat.v1.variable_scope('generator'):

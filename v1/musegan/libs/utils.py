@@ -17,7 +17,8 @@ import sys
 import os
 import imageio
 import glob
-
+import os
+import pretty_midi
 
 get_stddev = lambda x, k_h, k_w: 1/math.sqrt(k_w*k_h*x.get_shape()[-1])
 
@@ -225,3 +226,26 @@ def get_sample_shape(sample_size):
         grid_h = int(np.ceil(sample_size / grid_w))
         return [grid_h, grid_w]
 
+
+def ensure_dir(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+def save_midi(data, filename, tempo=120, instruments=None):
+    pm = pretty_midi.PrettyMIDI(initial_tempo=tempo)
+    instruments = instruments or ['acoustic grand piano', 'acoustic grand piano', 'acoustic grand piano', 'acoustic grand piano', 'acoustic grand piano']
+    for i, track_data in enumerate(np.moveaxis(data, -1, 0)):
+        inst = pretty_midi.Instrument(program=pretty_midi.instrument_name_to_program(instruments[i] if i < len(instruments) else 'acoustic grand piano'))
+        for pitch in range(track_data.shape[1]):
+            for t in range(track_data.shape[0]):
+                if np.any(track_data[t, pitch] > 0):
+                    note = pretty_midi.Note(
+                        velocity=100,
+                        pitch=pitch,
+                        start=t * 0.5,
+                        end=(t + 1) * 0.5
+                    )
+                    inst.notes.append(note)
+        pm.instruments.append(inst)
+
+    pm.write(filename)
