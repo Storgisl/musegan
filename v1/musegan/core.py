@@ -6,8 +6,10 @@ import os
 import time
 from glob import glob
 import numpy as np
-import tensorflow as tf
-from six.moves import xrange
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
+
+from six.moves import range
 from sklearn.utils import shuffle
 from musegan.libs.ops import *
 from musegan.libs.utils import *
@@ -49,7 +51,7 @@ class GAN(object):
 
         print('*initializing variables...')
 
-        tf.global_variables_initializer().run()
+        self.sess.run(tf.global_variables_initializer())
 
         self.dir_ckpt = os.path.join(self.config.exp_name, 'checkpoint')
         self.dir_sample = os.path.join(self.config.exp_name, 'samples')
@@ -64,8 +66,7 @@ class GAN(object):
 
         path_src = os.path.join(self.dir_log, 'src')
 
-        if not os.path.exists(path_src):
-            os.makedirs(path_src)
+        os.makedirs(path_src, exist_ok=True)
 
         for file_path in glob.glob("./*.py"):
             copyfile(file_path, os.path.join(path_src, os.path.basename(file_path)))
@@ -231,8 +232,12 @@ class MuseGAN(object):
         self.model = model
 
         self.summaries = tf.get_collection(tf.GraphKeys.SUMMARIES)
-        self.summary = tf.summary.merge(self.summaries)
-        self.summary_image = tf.summary.merge([s for s in self.summaries if '/prediction/' in s.name])
+        self.summary = tf.summary.merge(self.summaries) if self.summaries else None
+        prediction_summaries = [s for s in self.summaries if '/prediction/' in s.name]
+        if prediction_summaries:
+            self.summary_image = tf.summary.merge(prediction_summaries)
+        else:
+            self.summary_image = None
 
         self.model.get_model_info(quiet=False)
 
@@ -254,7 +259,7 @@ class MuseGAN(object):
                     scale_mask=self.config.scale_mask,
                     track_names=self.config.track_names)
 
-        tf.global_variables_initializer().run()
+        self.sess.run(tf.global_variables_initializer())
 
         self.dir_ckpt = os.path.join(self.config.exp_name, 'checkpoint')
         self.dir_sample = os.path.join(self.config.exp_name, 'samples')
@@ -269,9 +274,8 @@ class MuseGAN(object):
 
         path_src = os.path.join(self.dir_log, 'src')
 
-        if not os.path.exists(path_src):
-            os.makedirs(path_src)
-
+        os.makedirs(path_src, exist_ok=True)
+        from shutil import copyfile
         for file_path in glob.glob("./*.py"):
             copyfile(file_path, os.path.join(path_src, os.path.basename(file_path)))
 
@@ -409,7 +413,14 @@ class MuseGAN(object):
             print('*saving files...')
             save_midis(samples_binary, file_path=os.path.join(save_dir, prefix+'.mid'))
 
-            sample_shape = get_sample_shape(sample_size)
+            def get_best_grid(num_images):
+                rows = int(np.floor(np.sqrt(num_images)))
+                cols = int(np.ceil(num_images / rows))
+                return [rows, cols]
+
+            sample_shape = get_best_grid(samples.shape[0])
+
+            print(f"[run_sampler] Using sample shape: {sample_shape} for {samples.shape[0]} samples")
             save_bars(samples, size=sample_shape, file_path=save_dir, name=prefix,type_=type_)
             save_bars(samples_binary, size=sample_shape, file_path=save_dir, name=prefix+'_binary', type_=type_)
             save_bars(samples_chroma, size=sample_shape, file_path=save_dir, name=prefix+'_chroma', type_=type_)

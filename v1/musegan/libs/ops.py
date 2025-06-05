@@ -4,7 +4,9 @@ from __future__ import print_function
 
 import math
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
+
 from tensorflow.python.framework import ops
 from musegan.libs.utils import *
 
@@ -35,7 +37,13 @@ def batch_norm(tensor_in, apply=True):
 
     """
     if tensor_in is not None and apply:
-        return tf.contrib.layers.batch_norm(tensor_in, decay=0.9, epsilon=1e-5, updates_collections=None, scale=True)
+        return tf.compat.v1.layers.batch_normalization(
+            inputs=tensor_in,
+            momentum=0.9,
+            epsilon=1e-5,
+            scale=True,
+            training=True
+        )
     else:
         return tensor_in
 

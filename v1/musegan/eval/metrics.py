@@ -6,7 +6,8 @@ from __future__ import print_function
 import warnings
 import matplotlib
 import SharedArray as sa
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 
 ## notebook
 import matplotlib.pyplot as plt
@@ -139,24 +140,26 @@ class Metrics(object):
         activation_span = np.sum(bar, axis=0)
         return np.sum(activation_span > 0)
 
-    def metric_qualified_note_ratio(self, bar, threshold=2):
-        span = bar.shape[1]
-        bar_diff = np.concatenate((np.zeros((1, span)), bar, np.zeros((1, span))))
-        bar_search = np.diff(bar_diff, axis=0)
+    def metric_qualified_note_ratio(self, pianoroll):
+        # Pianoroll: (time, pitch) or (time, pitch, track)
+        # Determine which axis is time if needed
 
-        num_notes = 0
-        num_short_notes = 0
+        onset = np.any(pianoroll > 0, axis=1)
+        offset = np.any(np.diff(pianoroll, axis=0) < 0, axis=1)
+        st_idx = np.where(onset)[0]
+        ed_idx = np.where(offset)[0]
 
-        for p in range(bar.shape[1]):
-            st_idx = (bar_search[:,p] > 0).nonzero()[0]
-            ed_idx = (bar_search[:,p] < 0).nonzero()[0]
-            for idx in range(len(st_idx)):
-                tmp_len = ed_idx[idx] - st_idx[idx]
-                if(tmp_len >=  threshold):
-                    num_short_notes += 1
-                num_notes += 1
+        limit = min(len(st_idx), len(ed_idx))
 
-        return num_short_notes / num_notes
+        qualified_notes = 0
+        total_notes = 0
+        for idx in range(limit):
+            tmp_len = ed_idx[idx] - st_idx[idx]
+            total_notes += 1
+            if tmp_len >= 2:  # Or the threshold you use for "qualified"
+                qualified_notes += 1
+
+        return qualified_notes / total_notes if total_notes > 0 else 0.0
 
     def metric_polyphonic_ratio(self, bar, threshold=2):
         return sum(np.sum(bar, axis=1) >= threshold) / 96
@@ -278,10 +281,10 @@ class Metrics(object):
             print('[*] Done!! saved in %s' %(fig_dir))
 
         # return vlaues
-        if output_type is 0: # mean vlaue, scalar
+        if output_type == 0: # mean vlaue, scalar
             return score_matrix_mean, score_pair_matrix_mean
 
-        if output_type is 1: # list of values
+        if output_type == 1: # list of values
             return score_matrix, score_pair_matrix
 
 # check info.npy

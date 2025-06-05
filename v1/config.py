@@ -9,7 +9,8 @@ import numpy as np
 from shutil import copyfile
 import os
 import SharedArray as sa
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 import glob
 
 print('[*] config...')
@@ -136,6 +137,10 @@ class NowBarComposerConfig(ModelConfig):
 
 # Temporal
 class TemporalHybridConfig(ModelConfig):
+    num_phrase = 4
+    num_bar = 4
+    num_step = 96
+    pitch_range = 84
     track_names = TRACK_NAMES
     track_dim = 5
     output_bar = 4

@@ -2,16 +2,18 @@ from __future__ import print_function
 import numpy as np
 import os
 import SharedArray as sa
-import tensorflow as tf
-from tensorflow.examples.tutorials.mnist import input_data
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
+from tensorflow.keras.datasets import mnist
 
 class InputData:
-    def __init__(self, model, batch_size=64):
+    def __init__(self, model, batch_size=64, seed=None):
         self.model = model # to get endpoint
         self.batch_size = batch_size
         self.z = dict()
         self.x = dict()
-
+        self.seed = seed
+        np.random.seed(seed)
     def add_data(self, path_new, key='train'):
         self.x[key] = np.load(path_new)
         print('data size:', self.x[key].shape)
@@ -30,14 +32,16 @@ class InputData:
     def get_batch(self, idx=0, data_size=None, key='train'):
         data_size = self.batch_size if data_size is None else data_size
         st = self.batch_size*idx
-        return self.x[key][st:st+data_size] * 2. - 1.
+        x = self.x[key][st:st+data_size] * 2. - 1.
+        x = x.reshape((-1, 4, 4, 96, 84, 5))  # Adjust according to your actual intended dimensions
+        return x
+
 
     def get_rand_smaples(self, sample_size=64, key='train'):
         random_idx = np.random.choice(len(self.x[key]), sample_size, replace=False)
         return self.x[key][random_idx]*2. - 1.
 
     def gen_feed_dict(self, idx=0, data_size=None, key='train', z=None):
-        batch_size = self.batch_size if data_size is None else data_size
         feed_dict = self.gen_z_dict(data_size=data_size, z=z)
 
         if key is not None:
@@ -57,9 +61,12 @@ class InputDataMNIST(InputData):
         self.batch_size = batch_size
         self.x = dict()
 
-        mnist = input_data.read_data_sets(self.dataset_dir, one_hot = True)
-        self.add_data_np(mnist.train.images.reshape((-1,28,28,1)), 'train')
-        self.add_data_np(mnist.test.images.reshape((-1,28,28,1)), 'test')
+        (train_images, _), (test_images, _) = mnist.load_data()
+        train_images = train_images.reshape((-1, 28, 28, 1)).astype(np.float32) / 255.0
+        test_images = test_images.reshape((-1, 28, 28, 1)).astype(np.float32) / 255.0
+
+        self.add_data_np(train_images, 'train')
+        self.add_data_np(test_images, 'test')
 
     def gen_feed_dict(self, idx=0, data_size=None, key='train'):
         batch_size = self.batch_size if data_size is None else data_size

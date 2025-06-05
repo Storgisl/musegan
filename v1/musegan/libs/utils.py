@@ -5,6 +5,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import imageio.v2 as imageio
 import math
 import json
 import random
@@ -26,63 +27,112 @@ def imread(path, is_grayscale=False):
     else:
         return scipy.misc.imread(path).astype(np.float)
 
-def imsave(images, size, path, boarder=3, name='sample', type_=0):
-    '''
-    type: 0 merge, 1 split
+def imsave(images, size, path, name='result', boarder=True, type_=0):
+    if not os.path.exists(path):
+        os.makedirs(path)
+    output_path = os.path.join(path, name if name.endswith('.png') else name + '.png')
 
-    '''
-    scipy.misc.imsave(os.path.join(path, name+'.png'), merge(images, size, boarder=boarder))
+    print(f"[imsave] Input shape: {images.shape}")  # Debug
 
-    if type_ is 1:
-        save_dir = os.path.join(path, name)
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-        for idx in range(images.shape[0]):
-            scipy.misc.imsave(os.path.join(save_dir, name+'_%d.png'%idx), images[idx, :, :, :])
+    # Flatten grid if it's a grid of grids (e.g., (4, 4, 96, 84, 3))
+    if images.ndim == 5 and images.shape[:2] == tuple(size):
+        images = images.reshape(-1, *images.shape[2:])
+    if len(images) > size[0] * size[1]:
+        print(f"[imsave] Warning: {len(images)} images won't fit in {size[0]}x{size[1]} grid. Only first {size[0]*size[1]} will be saved.")
+    max_images = size[0] * size[1]
+    if len(images) > max_images:
+        print(f"[imsave] Warning: {len(images)} images won't fit in {size[0]}x{size[1]} grid. Only first {max_images} will be saved.")
+        images = images[:max_images]
+    merged_image = merge(images, size, boarder=boarder)
 
-def merge(images, size, boarder=3):
+    print(f"[imsave] Merged image shape: {merged_image.shape}")  # Debug
+
+    # Ensure image has valid dimensions
+    if merged_image.ndim == 4:
+        raise ValueError("Merged image is 4D — you probably didn't reshape or merge correctly.")
+    elif merged_image.ndim == 2:
+        pass  # grayscale
+    elif merged_image.ndim == 3 and merged_image.shape[2] not in [1, 3, 4]:
+        raise ValueError("Merged image 3rd dimension must be 1 (grayscale), 3 (RGB), or 4 (RGBA).")
+    elif merged_image.ndim > 3:
+        raise ValueError("Merged image must be 2D or 3D (RGB), but got shape {}".format(merged_image.shape))
+
+    imageio.imwrite(output_path, merged_image)
+
+
+def merge(images, size, boarder=True):
+    """Merge (N, H, W, C) images into one image grid"""
     h, w = images.shape[1], images.shape[2]
-    img = np.zeros((h*size[0] + boarder*(size[0]-1), w*size[1] + boarder*(size[1]-1), 3))
+    c = images.shape[3]
+    boarder = 1 if boarder else 0
+
+    # Create a blank canvas for merged image
+    img = np.zeros(((h + boarder) * size[0] - boarder,
+                    (w + boarder) * size[1] - boarder, c), dtype=np.uint8)
 
     for idx, image in enumerate(images):
-        i = idx % size[1]
-        j = idx // size[1]
-        add_h = boarder if j < size[0] else 0
-        add_w = boarder if i < size[1] else 0
-        img[j*(h+add_h):j*(h+add_h)+h, i*(w+add_w):i*(w+add_w)+w, :] = image
-
-    for i in range(1,size[1]):
-        img[:,i*(w+3)-3:i*(w+3)] = [1.0, 1.0, 1.0]
-    for j in range(1,size[0]):
-        img[j*(h+3)-3:j*(h+3),:] = [1.0, 1.0, 1.0]
+        i = idx % size[1]  # column
+        j = idx // size[1]  # row
+        img[j * (h + boarder):j * (h + boarder) + h,
+            i * (w + boarder):i * (w + boarder) + w, :] = image
     return img
 
-def to_image_np(bars):
-    colormap = np.array([[1., 0., 0.],
-                         [0., 1., 0.],
-                         [0., 0., 1.],
-                         [1., .5, 0.],
-                         [0., .5, 1.]])
-    recolored_bars = np.matmul(bars.reshape(-1, 5), colormap).reshape((bars.shape[0], bars.shape[1], bars.shape[2], 3))
-    # recolored_bars = np.zeros((bars.shape[0], bars.shape[1], bars.shape[2], 3))
-    # for track_idx in range(bars.shape[-1]):
-    #     recolored_bars = recolored_bars + bars[..., track_idx][:, :, :, None]*colormap[track_idx][None, None, None, :]
-    return np.flip(np.transpose(recolored_bars, (0, 2, 1, 3)), axis=1)
 
-def save_bars(bars, size, file_path, name='sample', type_=0):
-    return imsave(to_image_np(bars), size, file_path, name=name, type_=type_)
+def to_image_np(bars):
+    print(f"[to_image_np] Raw input shape: {bars.shape}")  # (64, 4, 4, 96, 84, 5)
+    
+    bars = np.clip(bars, 0, 1)
+    bars = (bars * 255).astype(np.uint8)
+
+    # Merge tracks horizontally (H, W, T) → (H, W*T)
+    bars = bars.reshape(-1, *bars.shape[-3:])  # (N, 96, 84, 5)
+    bars = bars.transpose(0, 1, 2, 3)  # (N, H, W, T)
+    bars = bars.reshape(bars.shape[0], bars.shape[1], bars.shape[2] * bars.shape[3])  # (N, H, W*T)
+
+    # Add RGB channels
+    bars = np.stack([bars] * 3, axis=-1)  # (N, H, W*T, 3)
+
+    print(f"[to_image_np] After reshape: {bars.shape}")
+    return bars
+
+
+
+def save_bars(bars, size=None, file_path='.', name='sample', type_=0):
+    images = to_image_np(bars)
+    n_images = images.shape[0]
+
+    if size is None:
+        grid_w = int(np.ceil(np.sqrt(n_images)))
+        grid_h = int(np.ceil(n_images / grid_w))
+        size = [grid_h, grid_w]
+
+    print(f"[save_bars] Saving {n_images} images with grid size {size}")
+    return imsave(images, size, file_path, name=name, type_=type_)
+
 
 def save_midis(bars, file_path):
-    padded_bars = np.concatenate((np.zeros((bars.shape[0], bars.shape[1], 24, bars.shape[3])), bars, np.zeros((bars.shape[0], bars.shape[1], 20, bars.shape[3]))), axis=2)
-    pause = np.zeros((bars.shape[0], 96, 128, bars.shape[3]))
-    images_with_pause = padded_bars
-    images_with_pause = images_with_pause.reshape(-1, 96, padded_bars.shape[2], padded_bars.shape[3])
+    # Padding 24 left, 20 right to pitch dimension (axis=4)
+    zero_left = np.zeros((bars.shape[0], bars.shape[1], bars.shape[2], bars.shape[3], 24, bars.shape[5]))
+    zero_right = np.zeros((bars.shape[0], bars.shape[1], bars.shape[2], bars.shape[3], 20, bars.shape[5]))
+    padded_bars = np.concatenate((zero_left, bars, zero_right), axis=4)  # shape: (B, P, B, S, 128, T)
+
+    # Reshape to (samples, step, pitch, track)
+    images_with_pause = padded_bars.reshape(-1, padded_bars.shape[3], padded_bars.shape[4], padded_bars.shape[5])
+
+    # Split each track into its own piano roll array
     images_with_pause_list = []
-    for ch_idx in range(padded_bars.shape[3]):
-        images_with_pause_list.append(images_with_pause[:,:,:,ch_idx].reshape(images_with_pause.shape[0],  \
-                                                        images_with_pause.shape[1], images_with_pause.shape[2]))
-    write_midi.write_piano_rolls_to_midi(images_with_pause_list, program_nums=[33,0,25,49,0], is_drum=[False, True, False, False, False],  \
-                                                            filename=file_path, tempo=80.0)
+    for ch_idx in range(images_with_pause.shape[3]):  # Iterate over track/channel dimension
+        images_with_pause_list.append(images_with_pause[:, :, :, ch_idx])
+
+    # Write to MIDI
+    write_midi.write_piano_rolls_to_midi(
+        images_with_pause_list,
+        program_nums=[33, 0, 25, 49, 0],  # GM programs for bass, drums, guitar, piano, strings
+        is_drum=[False, True, False, False, False],
+        filename=file_path,
+        tempo=80.0
+    )
+
 
 def transform(image, npx=64, resize_w=64):
     # npx : # of pixels width/height of image
@@ -159,13 +209,19 @@ def slerp(a, b, steps):
     return step_list
 
 def get_sample_shape(sample_size):
-    if sample_size >= 64  and sample_size %8 == 0:
-        return [8, sample_size//8]
-    elif sample_size >= 48  and sample_size %6 == 0:
-        return [6,sample_size//6]
-    elif sample_size >= 24 and sample_size %4 == 0:
-        return [4, sample_size/4]
-    elif sample_size >= 15 and sample_size %3 == 0:
-        return [3, sample_size//3]
-    elif sample_size >= 8 and sample_size %2 == 0:
-        return [2, sample_size//2]
+    if sample_size >= 64 and sample_size % 8 == 0:
+        return [8, sample_size // 8]
+    elif sample_size >= 48 and sample_size % 6 == 0:
+        return [6, sample_size // 6]
+    elif sample_size >= 24 and sample_size % 4 == 0:
+        return [4, sample_size // 4]
+    elif sample_size >= 15 and sample_size % 3 == 0:
+        return [3, sample_size // 3]
+    elif sample_size >= 8 and sample_size % 2 == 0:
+        return [2, sample_size // 2]
+    else:
+        # fallback for odd or non-standard sample sizes
+        grid_w = int(np.ceil(np.sqrt(sample_size)))
+        grid_h = int(np.ceil(sample_size / grid_w))
+        return [grid_h, grid_w]
+
