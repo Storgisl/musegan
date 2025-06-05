@@ -475,7 +475,8 @@ class MuseGAN(object):
             self.load(self.dir_ckpt)
 
         # Create output directory
-        output_dir = os.path.join(self.dir_output, 'custom_generate')
+        output_dir = os.path.join("/app/musegan/v1/exps/temporal_hybrid/output/custom_generate")
+        os.makedirs(output_dir, exist_ok=True)
         ensure_dir(output_dir)
 
         # Create latent vectors
